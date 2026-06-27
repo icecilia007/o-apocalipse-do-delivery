@@ -1,8 +1,9 @@
 class CheckoutService {
-  constructor(gatewayPagamento, pedidoRepository, emailService) {
+  constructor(gatewayPagamento, pedidoRepository, emailService, logger = console) {
     this.gatewayPagamento = gatewayPagamento;
     this.pedidoRepository = pedidoRepository;
     this.emailService = emailService;
+    this.logger = logger;
   }
 
   async processar(pedido) {
@@ -23,7 +24,7 @@ class CheckoutService {
     const pedidoSalvo = await this.pedidoRepository.salvar(pedido);
     this.emailService
       .enviarConfirmacao(pedido.clienteEmail, 'Pagamento Aprovado')
-      .catch(err => console.error('Falha ao enviar e-mail:', err.message));
+      .catch(err => this.logger.error('Falha ao enviar e-mail:', err.message));
     return pedidoSalvo;
   }
 
@@ -34,7 +35,7 @@ class CheckoutService {
   }
 
   async _handleErroGateway(pedido, error) {
-    console.error('Falha catastrófica no gateway bancário:', error.message);
+    this.logger.error('Falha catastrófica no gateway bancário:', error.message);
     pedido.status = 'ERRO_GATEWAY';
     await this.pedidoRepository.salvar(pedido);
     return null;

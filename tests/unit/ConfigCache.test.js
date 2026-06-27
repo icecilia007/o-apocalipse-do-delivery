@@ -79,6 +79,24 @@ describe('ConfigCache — resiliência na recarga', () => {
     expect(tentativas).toBe(2);
   });
 
+  test('usa o sleep padrao com backoff quando nao recebe sleepImpl', async () => {
+    let tentativas = 0;
+    const cache = new ConfigCache(
+      async () => {
+        tentativas++;
+        if (tentativas === 1) throw new Error('DB oscilou');
+        return { ok: true };
+      },
+      { maxRetries: 1, backoffMs: 0, jitterMs: 0 }
+    );
+
+    const r = await cache.get();
+
+    expect(r).toEqual({ ok: true });
+    expect(tentativas).toBe(2);
+    expect(cache.metricas.leiturasNoBanco).toBe(2);
+  });
+
   test('propaga o erro quando o banco falha em todas as tentativas', async () => {
     const cache = new ConfigCache(
       async () => {
