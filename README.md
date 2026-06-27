@@ -6,7 +6,7 @@ código limpo, cobertura contra mutantes, BDD e resiliência sob caos (SRE).
 ## Integrantes
 - Sthel
 - Izabela
-- Felipe
+- Filipe
 - Rafael
 - Amanda
 - Vinícius
