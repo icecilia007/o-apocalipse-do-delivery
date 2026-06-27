@@ -156,3 +156,109 @@ describe('HttpGatewayPagamento — construtor', () => {
     expect(() => new HttpGatewayPagamento()).toThrow(/baseUrl/);
   });
 });
+
+describe('HttpGatewayPagamento - classificacao de falhas de infraestrutura', () => {
+  test('nao faz retry quando o erro propagado representa HTTP 4xx', async () => {
+    const erro4xx = new Error('Gateway respondeu HTTP 422');
+    erro4xx.httpStatus = 422;
+    const fetchImpl = jest.fn().mockRejectedValue(erro4xx);
+    const gw = novoGateway(fetchImpl, { volumeThreshold: 99 });
+
+    await expect(gw.cobrar(150, {})).rejects.toBe(erro4xx);
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  test('faz retry quando o erro de rede nao possui httpStatus', async () => {
+    const fetchImpl = jest.fn().mockRejectedValue(new Error('ECONNREFUSED'));
+    const gw = novoGateway(fetchImpl, { volumeThreshold: 99 });
+
+    await expect(gw.cobrar(150, {})).rejects.toThrow('ECONNREFUSED');
+
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('HttpGatewayPagamento - meio-aberto com falha', () => {
+  test('reabre o breaker quando a tentativa em MEIO_ABERTO falha', async () => {
+    const fetchImpl = jest.fn().mockResolvedValue(resposta5xx(500));
+    const gw = novoGateway(fetchImpl, {
+      maxRetries: 0,
+      volumeThreshold: 3,
+      cooldownMs: 10
+    });
+
+    for (let i = 0; i < 3; i++) {
+      await expect(gw.cobrar(150, {})).rejects.toThrow(/HTTP 500/);
+    }
+    expect(gw.estado).toBe(ESTADO.ABERTO);
+
+    await new Promise((r) => setTimeout(r, 15));
+    await expect(gw.cobrar(150, {})).rejects.toThrow(/HTTP 500/);
+
+    expect(gw.estado).toBe(ESTADO.ABERTO);
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('HttpGatewayPagamento - opcoes padrao e branches auxiliares', () => {
+  test('usa valores padrao quando opcoes resilientes nao sao informadas', async () => {
+    const fetchOriginal = globalThis.fetch;
+    const fetchFake = jest.fn();
+    globalThis.fetch = fetchFake;
+
+    try {
+      const gw = new HttpGatewayPagamento('http://fake-gateway/');
+
+      expect(gw.baseUrl).toBe('http://fake-gateway');
+      expect(gw.timeoutMs).toBe(2000);
+      expect(gw.maxRetries).toBe(3);
+      expect(gw.backoffMs).toBe(500);
+      expect(gw.jitterMs).toBe(250);
+      expect(gw.errorRateThreshold).toBe(0.5);
+      expect(gw.volumeThreshold).toBe(5);
+      expect(gw.cooldownMs).toBe(5000);
+      expect(gw.janelaMax).toBe(20);
+      expect(gw._fetch).toBe(fetchFake);
+      expect(typeof gw._sleep).toBe('function');
+      await expect(gw._sleep(0)).resolves.toBeUndefined();
+    } finally {
+      globalThis.fetch = fetchOriginal;
+    }
+  });
+
+  test('limita a janela de historico ao tamanho maximo configurado', () => {
+    const gw = novoGateway(jest.fn(), { janelaMax: 2, volumeThreshold: 99 });
+
+    gw._registrar(true);
+    gw._registrar(false);
+    gw._registrar(true);
+
+    expect(gw.janela).toEqual([false, true]);
+  });
+
+  test('mantem breaker fechado quando taxa de erro nao ultrapassa o limiar', () => {
+    const gw = novoGateway(jest.fn(), {
+      volumeThreshold: 2,
+      errorRateThreshold: 0.75
+    });
+
+    gw._registrar(false);
+    gw._registrar(true);
+
+    expect(gw.estado).toBe(ESTADO.FECHADO);
+  });
+
+  test('estadoAtual calcula taxa de erro quando ha amostras', () => {
+    const gw = novoGateway(jest.fn(), { volumeThreshold: 99 });
+
+    gw._registrar(false);
+    gw._registrar(true);
+
+    expect(gw.estadoAtual()).toEqual({
+      estado: ESTADO.FECHADO,
+      amostras: 2,
+      taxaErro: 0.5
+    });
+  });
+});

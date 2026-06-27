@@ -39,12 +39,15 @@ class CheckoutWorld {
     this.emailService = {
       enviarConfirmacao: criarSpy(async () => undefined)
     };
+    this.logger = {
+      error: () => undefined
+    };
     this.pedido = null;
     this.resultado = undefined;
   }
 
   novoServico() {
-    return new CheckoutService(this.gateway, this.repository, this.emailService);
+    return new CheckoutService(this.gateway, this.repository, this.emailService, this.logger);
   }
 
   /** Replica a lógica da rota: valida antes e só processa se o payload for válido. */

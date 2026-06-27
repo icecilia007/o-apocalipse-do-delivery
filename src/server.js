@@ -113,6 +113,7 @@ app.get('/health', (req, res) => {
 
 module.exports = { app, validarPayload };
 
+/* istanbul ignore next */
 if (require.main === module) {
   const PORT = Number(process.env.PORT) || 3000;
   app.listen(PORT, () =>

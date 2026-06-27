@@ -161,13 +161,14 @@ describe('CheckoutService', () => {
   // ── CT-03: N1→N2→N6→N7 ───────────────────────────────────────────────────
   describe('Caminho N6 — ERRO_GATEWAY (falha de infraestrutura / catch)', () => {
 
-    let gateway, repository, emailService, service, pedido;
+    let gateway, repository, emailService, logger, service, pedido;
 
     beforeEach(() => {
       gateway      = criarGatewayComFalha('Timeout: gateway indisponível');
       repository   = criarRepositoryMock();
       emailService = criarEmailMock();
-      service      = new CheckoutService(gateway, repository, emailService);
+      logger       = { error: jest.fn() };
+      service      = new CheckoutService(gateway, repository, emailService, logger);
       pedido       = new PedidoBuilder()
                        .comEmail('cliente@email.com')
                        .comValor(150.00)
@@ -195,6 +196,15 @@ describe('CheckoutService', () => {
       await Promise.resolve();
 
       expect(emailService.enviarConfirmacao).not.toHaveBeenCalled();
+    });
+
+    test('deve registrar o erro do gateway sem poluir a saida dos testes', async () => {
+      await service.processar(pedido);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining('gateway'),
+        expect.stringContaining('Timeout: gateway')
+      );
     });
 
     test('deve tratar a exceção sem relançá-la (falha controlada)', async () => {
